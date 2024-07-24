@@ -18,15 +18,16 @@
 				"spark.dynamicAllocation.enabled": "false",
 				"spark.dynamicAllocation.minExecutors": "2",
 				"spark.dynamicAllocation.maxExecutors": "2",
-				"spark.autotune.trackingId": "3988832d-0abc-4a26-914e-121bfb9e058b"
+				"spark.autotune.trackingId": "25a1737a-b4bc-4eeb-8226-769a42234a77"
 			}
 		},
 		"metadata": {
 			"saveOutput": true,
-			"synapse_widget": {
-				"version": "0.1"
-			},
 			"enableDebugMode": false,
+			"kernelspec": {
+				"name": "synapse_pyspark",
+				"display_name": "python"
+			},
 			"language_info": {
 				"name": "python"
 			},
@@ -37,14 +38,13 @@
 				"endpoint": "https://synapse-001.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/SampleSpark",
 				"auth": {
 					"type": "AAD",
-					"authResource": "https://dev.azuresynapse.net",
-					"authHeader": null
+					"authResource": "https://dev.azuresynapse.net"
 				},
 				"sparkVersion": "3.4",
 				"nodeCount": 3,
 				"cores": 8,
 				"memory": 56,
-				"extraHeader": null
+				"automaticScaleJobs": false
 			},
 			"sessionKeepAliveTimeout": 30
 		},
@@ -52,8 +52,89 @@
 			{
 				"cell_type": "code",
 				"source": [
-					""
-				]
+					"import os\n",
+					"import stripe\n",
+					"import pandas as pd\n",
+					"from datetime import datetime\n",
+					"from dotenv import load_dotenv\n",
+					"\n",
+					"# Load environment variables from .env file\n",
+					"load_dotenv()\n",
+					"\n",
+					"# Set your Stripe secret key here\n",
+					"stripe.api_key = os.getenv('STRIPE_SECRET_KEY')\n",
+					"\n",
+					"def fetch_customers_with_subscriptions():\n",
+					"    customers = []\n",
+					"    for customer in stripe.Customer.list(limit=100).auto_paging_iter():\n",
+					"        # Check if the customer has an active subscription\n",
+					"        subscriptions = stripe.Subscription.list(customer=customer.id, limit=1)\n",
+					"        if subscriptions['data']:\n",
+					"            subscription = subscriptions['data'][0]\n",
+					"            customers.append({\n",
+					"                'customer_id': customer.id,\n",
+					"                'email': customer.email,\n",
+					"                'name': customer.name,\n",
+					"                'subscription_status': subscription['status'],\n",
+					"                'subscription_amount': subscription['items']['data'][0]['plan']['amount'] / 100,  # Convert amount from cents to dollars\n",
+					"                'subscription_currency': subscription['items']['data'][0]['plan']['currency']\n",
+					"            })\n",
+					"    return customers\n",
+					"\n",
+					"def fetch_customers_with_one_time_purchases():\n",
+					"    customers = []\n",
+					"    for charge in stripe.Charge.list(limit=100).auto_paging_iter():\n",
+					"        if charge.customer:  # Check if the charge has an associated customer\n",
+					"            customer = charge.customer\n",
+					"            customer_details = stripe.Customer.retrieve(customer)\n",
+					"            customers.append({\n",
+					"                'customer_id': customer,\n",
+					"                'email': customer_details.email,\n",
+					"                'name': customer_details.name,\n",
+					"                'amount': charge.amount / 100,  # Convert amount from cents to dollars\n",
+					"                'currency': charge.currency,\n",
+					"                'created': datetime.fromtimestamp(charge.created).strftime('%Y-%m-%d %H:%M:%S'),  # Convert Unix timestamp to readable date\n",
+					"                'description': charge.description,\n",
+					"                'payment_status': charge.status\n",
+					"            })\n",
+					"    return customers\n",
+					"\n",
+					"def fetch_all_payments_for_customers():\n",
+					"    payments = []\n",
+					"    for customer in stripe.Customer.list(limit=100).auto_paging_iter():\n",
+					"        for charge in stripe.Charge.list(customer=customer.id, limit=100).auto_paging_iter():\n",
+					"            payments.append({\n",
+					"                'customer_id': customer.id,\n",
+					"                'email': customer.email,\n",
+					"                'name': customer.name,\n",
+					"                'amount': charge.amount / 100,  # Convert amount from cents to dollars\n",
+					"                'currency': charge.currency,\n",
+					"                'created': datetime.fromtimestamp(charge.created).strftime('%Y-%m-%d %H:%M:%S'),  # Convert Unix timestamp to readable date\n",
+					"                'description': charge.description,\n",
+					"                'payment_status': charge.status\n",
+					"            })\n",
+					"    return payments\n",
+					"\n",
+					"if __name__ == '__main__':\n",
+					"    # Fetch customers with subscriptions\n",
+					"    subscription_customers = fetch_customers_with_subscriptions()\n",
+					"    df_subscriptions = pd.DataFrame(subscription_customers)\n",
+					"    df_subscriptions.to_csv('subscription_customers.csv', index=False)\n",
+					"    print(\"Subscription customers data saved to subscription_customers.csv\")\n",
+					"\n",
+					"    # Fetch customers with one-time purchases\n",
+					"    one_time_customers = fetch_customers_with_one_time_purchases()\n",
+					"    df_one_time = pd.DataFrame(one_time_customers)\n",
+					"    df_one_time.to_csv('one_time_customers.csv', index=False)\n",
+					"    print(\"One-time purchase customers data saved to one_time_customers.csv\")\n",
+					"\n",
+					"    # Fetch all payments for customers\n",
+					"    all_payments = fetch_all_payments_for_customers()\n",
+					"    df_payments = pd.DataFrame(all_payments)\n",
+					"    df_payments.to_csv('all_payments.csv', index=False)\n",
+					"    print(\"All payment data saved to all_payments.csv\")"
+				],
+				"execution_count": null
 			}
 		]
 	}

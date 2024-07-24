@@ -18,15 +18,16 @@
 				"spark.dynamicAllocation.enabled": "false",
 				"spark.dynamicAllocation.minExecutors": "2",
 				"spark.dynamicAllocation.maxExecutors": "2",
-				"spark.autotune.trackingId": "26244f17-f49e-4f14-a289-161c801676f0"
+				"spark.autotune.trackingId": "bf2429a2-6dd1-4bc1-ae26-4ef4b09dbdde"
 			}
 		},
 		"metadata": {
 			"saveOutput": true,
-			"synapse_widget": {
-				"version": "0.1"
-			},
 			"enableDebugMode": false,
+			"kernelspec": {
+				"name": "synapse_pyspark",
+				"display_name": "python"
+			},
 			"language_info": {
 				"name": "python"
 			},
@@ -37,20 +38,124 @@
 				"endpoint": "https://synapse-001.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/SampleSpark",
 				"auth": {
 					"type": "AAD",
-					"authResource": "https://dev.azuresynapse.net",
-					"authHeader": null
+					"authResource": "https://dev.azuresynapse.net"
 				},
 				"sparkVersion": "3.4",
 				"nodeCount": 3,
 				"cores": 8,
 				"memory": 56,
-				"extraHeader": null
+				"automaticScaleJobs": false
 			},
 			"sessionKeepAliveTimeout": 30
 		},
 		"cells": [
 			{
 				"cell_type": "code",
+				"source": [
+					"import os\n",
+					"import discord\n",
+					"import pandas as pd\n",
+					"import aiohttp\n",
+					"intents = discord.Intents.all()\n",
+					"client = discord.Client(intents=intents)\n",
+					"\n",
+					"token = os.getenv('token')\n",
+					"guild_id = os.getenv('guild_id')\n",
+					"headers = {\n",
+					"    'Authorization': f'Bot {token}',\n",
+					"    'Content-Type': 'application/json'\n",
+					"}\n",
+					"\n",
+					"intents = discord.Intents.default()\n",
+					"intents.members = True\n",
+					"intents.guilds = True\n",
+					"intents.messages = True\n",
+					"\n",
+					"client = discord.Client(intents=intents)\n",
+					"\n",
+					"\n",
+					"@client.event\n",
+					"async def on_ready():\n",
+					"    print(f'We have logged in as {client.user}')\n",
+					"    await fetch_user_activity()\n",
+					"    await fetch_user_invite_codes()\n",
+					"    await client.close()\n",
+					"\n",
+					"\n",
+					"async def fetch_user_invite_codes():\n",
+					"    url = f'https://discord.com/api/guilds/{guild_id}/members-search'\n",
+					"    all_invite_data = []\n",
+					"    async with aiohttp.ClientSession(headers=headers) as session:\n",
+					"        async with session.post(url, json={'limit': 1000}) as response:\n",
+					"            if response.status == 200:\n",
+					"                data = await response.json()\n",
+					"                for member_info in data.get('members', []):\n",
+					"                    user_info = member_info['member']['user']\n",
+					"                    user_id = user_info['id']\n",
+					"                    invite_code = member_info.get('source_invite_code', 'N/A')\n",
+					"                    all_invite_data.append({\n",
+					"                        'user_id': user_id,\n",
+					"                        'source_invite_code': invite_code\n",
+					"                    })\n",
+					"            else:\n",
+					"                print(f'Error fetching invite data: {response.status}')\n",
+					"\n",
+					"    df_invite = pd.DataFrame(all_invite_data)\n",
+					"    df_invite.to_csv('user_invite_codes.csv', index=False)\n",
+					"    print(\"User invite codes saved to user_invite_codes.csv\")\n",
+					"\n",
+					"\n",
+					"async def fetch_user_activity():\n",
+					"    all_user_data = []\n",
+					"\n",
+					"    for guild in client.guilds:\n",
+					"        print(f'Fetching data for guild: {guild.name}')\n",
+					"        for channel in guild.text_channels:\n",
+					"            print(f'Fetching data for channel: {channel.name}')\n",
+					"            try:\n",
+					"                async for message in channel.history(limit=None):\n",
+					"                    if message.author.bot:\n",
+					"                        continue\n",
+					"                    user_data = {\n",
+					"                        'guild_name': guild.name,\n",
+					"                        'channel_name': channel.name,\n",
+					"                        'user_id': message.author.id,\n",
+					"                        'name': message.author.global_name,\n",
+					"                        'nickname': message.author.name,\n",
+					"                        'discriminator': message.author.discriminator,\n",
+					"                        'message_count': 1\n",
+					"                    }\n",
+					"                    all_user_data.append(user_data)\n",
+					"            except discord.Forbidden:\n",
+					"                print(f\"Cannot access channel: {channel.name}\")\n",
+					"\n",
+					"    df_activity = pd.DataFrame(all_user_data)\n",
+					"    df_activity.to_csv('user_message_counts.csv', index=False)\n",
+					"    print(\"User message counts saved to user_message_counts.csv\")\n",
+					"\n",
+					"    # Merge user activity data with invite data\n",
+					"    try:\n",
+					"        df_invite = pd.read_csv('user_invite_codes.csv')\n",
+					"        df_merged = pd.merge(df_activity, df_invite, on='user_id', how='left')\n",
+					"        df_merged.to_csv('user_combined_data.csv', index=False)\n",
+					"        print(\"User combined data saved to user_combined_data.csv\")\n",
+					"    except FileNotFoundError:\n",
+					"        print(\"Invite codes CSV not found. Make sure invite codes are fetched properly.\")\n",
+					"\n",
+					"\n",
+					"client.run(token)"
+				],
+				"execution_count": null
+			},
+			{
+				"cell_type": "markdown",
+				"metadata": {
+					"nteract": {
+						"transient": {
+							"deleting": false
+						}
+					}
+				},
 				"source": [
 					""
 				]
